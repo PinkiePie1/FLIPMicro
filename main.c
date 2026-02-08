@@ -17,8 +17,8 @@ void main(){
  //       }
         ParticleIntegrate(0, FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
-        density_update();
         particles_to_grid();
+        density_update();
         compute_grid_forces(20);
         grid_to_particles();
     }
@@ -33,8 +33,8 @@ for (int j =0;j<5;j++)
         }
         ParticleIntegrate(FIXED_FROM_INT(5), FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
-        density_update();
         particles_to_grid();
+        density_update();
         compute_grid_forces(20);
         grid_to_particles();
     }
@@ -46,8 +46,8 @@ for (int j =0;j<5;j++)
         }
         ParticleIntegrate(FIXED_FROM_INT(-5), FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
-        density_update();
         particles_to_grid();
+        density_update();
         compute_grid_forces(20);
         grid_to_particles();
     }

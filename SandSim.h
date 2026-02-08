@@ -75,6 +75,11 @@ static inline fixed_t fixed_mul_int(fixed_t value, int32_t multiplier) {
 #define overRelaxiation FIXED_FROM_RATIO(19, 10)
 #define stiffnessCoefficient FIXED_FROM_RATIO(3, 5)
 
+// 网格类型
+#define AIR_CELL 0U
+#define FLUID_CELL 1U
+#define SOLID_CELL 2U
+
 //用于访问粒子位置的一些方便的宏
 #define XID(n) 2*(n)    //访问x位置
 #define YID(n) 2*(n)+1  //访问y位置
