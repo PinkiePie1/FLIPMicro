@@ -273,6 +273,7 @@ void InitParticles(){
             }
         }
     }
+    memcpy(gridType, baseGridType, sizeof(gridType));
 
     for (int i = 1; i < CellNumY ; i++){
         for(int j = 1; j < CellNumX; j++){
@@ -699,23 +700,23 @@ void grid_to_particles() {
 
 void visualize_grid() {
     //显示
-    // 初始化缓冲区为全'-'
     char visual_buffer[CellNumY][CellNumX+1];
-    memset(visual_buffer, '-', sizeof(visual_buffer));
 
     printf("\e[1;1H\e[2J");//清空屏幕；。
     
-    // 标记粒子位置
-    for(int p=0; p<NumberOfParticles; p++){
-        int x = fixed_to_int(FIXED_MUL(particlePos[XID(p)], invertSpacing));
-        int y = fixed_to_int(FIXED_MUL(particlePos[YID(p)], invertSpacing));
-
-        visual_buffer[y][x] = 'x';
-    }
-
-    // 添加字符串终止符
-    for(int j=0; j<CellNumY; j++){
-        visual_buffer[j][CellNumX] = '\0';
+    // 根据网格类型直接显示
+    for (int y = 0; y < CellNumY; y++) {
+        for (int x = 0; x < CellNumX; x++) {
+            unsigned int cell = gridType[INDEX(x, y)];
+            char symbol = '-';
+            if (cell == FLUID_CELL) {
+                symbol = 'x';
+            } else if (cell == SOLID_CELL) {
+                symbol = '#';
+            }
+            visual_buffer[y][x] = symbol;
+        }
+        visual_buffer[y][CellNumX] = '\0';
     }
 
     
