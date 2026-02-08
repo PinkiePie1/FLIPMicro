@@ -2,7 +2,7 @@
 #include "main.h"
 
 //加快运算速度，一些除法可以先算。
-const fixed_t invertSpacing = FIXED_DIV(FIXED_ONE, Spacing);
+static fixed_t invertSpacing;
 const fixed_t initialDensity = FIXED_FROM_INT(4);
 const fixed_t nudge = FIXED_FROM_RATIO(1, 100);
 const fixed_t flipBlend = FIXED_FROM_RATIO(1, 5);
@@ -38,10 +38,10 @@ static int clamp_index(int value, int min_value, int max_value) {
 #define U_INDEX(x,y) ((x) * CellNumY + (y))
 #define V_INDEX(x,y) ((x) * (CellNumY + 1) + (y))
 
-static uint32_t isqrt64(uint64_t value) {
-    uint64_t op = value;
-    uint64_t res = 0;
-    uint64_t one = 1ULL << 62;
+static uint32_t isqrt32(uint32_t value) {
+    uint32_t op = value;
+    uint32_t res = 0;
+    uint32_t one = 1U << 30;
 
     while (one > op) {
         one >>= 2;
@@ -57,7 +57,7 @@ static uint32_t isqrt64(uint64_t value) {
         one >>= 2;
     }
 
-    return (uint32_t)res;
+    return res;
 }
 
 static void accumulate_u(fixed_t x, fixed_t y, fixed_t value) {
@@ -171,14 +171,15 @@ static fixed_t sample_v(fixed_t x, fixed_t y, const fixed_t *grid) {
 void InitParticles(){
     //在每个格子里生成一个。如果全填满了则不再生成。
     int p_num = 0;
+    invertSpacing = FIXED_DIV(FIXED_ONE, Spacing);
 
     fixed_t half_d = FIXED_MUL(Spacing, half); //半个间距。
     for (int i = 1; i < CellNumY ; i++){
         for(int j = 1; j < CellNumX; j++){
 
             int particleIndex = p_num;
-            particlePos[XID(particleIndex)] = (fixed_t)(j * (int64_t)Spacing) + half_d;
-            particlePos[YID(particleIndex)] = (fixed_t)(i * (int64_t)Spacing) + half_d;
+            particlePos[XID(particleIndex)] = fixed_mul_int(Spacing, j) + half_d;
+            particlePos[YID(particleIndex)] = fixed_mul_int(Spacing, i) + half_d;
             particleVel[XID(particleIndex)] = 0;
             particleVel[YID(particleIndex)] = 0;
             if(p_num++ >= NumberOfParticles){return;} 
@@ -213,8 +214,8 @@ void ParticleIntegrate(fixed_t xAcceleration, fixed_t yAcceleration){
             particlePos[XID(i)] = Spacing + nudge;
             particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS); // 反弹阻尼
         }
-        if(particlePos[XID(i)] >= (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius){
-            particlePos[XID(i)] = (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius - nudge;
+        if(particlePos[XID(i)] >= fixed_mul_int(Spacing, CellNumX) - ParticleRadius){
+            particlePos[XID(i)] = fixed_mul_int(Spacing, CellNumX) - ParticleRadius - nudge;
             particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS);
         }
         
@@ -223,8 +224,8 @@ void ParticleIntegrate(fixed_t xAcceleration, fixed_t yAcceleration){
             particlePos[YID(i)] = Spacing + nudge;
             particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
-        if(particlePos[YID(i)] >= (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius){
-            particlePos[YID(i)] = (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius - nudge;
+        if(particlePos[YID(i)] >= fixed_mul_int(Spacing, CellNumY) - ParticleRadius){
+            particlePos[YID(i)] = fixed_mul_int(Spacing, CellNumY) - ParticleRadius - nudge;
             particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
 
@@ -282,7 +283,8 @@ void PushParticlesApart(unsigned int nIters){
 //开始把粒子推开
 
 fixed_t minDist = ParticleRadius * 2;
-uint64_t minDist2 = (uint64_t)minDist * (uint64_t)minDist;
+fixed_t minDist_scaled = minDist >> 8;
+uint32_t minDist2 = (uint32_t)minDist_scaled * (uint32_t)minDist_scaled;
 do {
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
         fixed_t px = particlePos[XID(i)];
@@ -309,8 +311,10 @@ do {
 
                     fixed_t dx = qx - px;
                     fixed_t dy = qy - py;
-                    uint64_t d2 = (uint64_t)(int64_t)dx * (uint64_t)(int64_t)dx +
-                        (uint64_t)(int64_t)dy * (uint64_t)(int64_t)dy;
+                    int32_t dx_scaled = dx >> 8;
+                    int32_t dy_scaled = dy >> 8;
+                    uint32_t d2 = (uint32_t)(dx_scaled * dx_scaled) +
+                        (uint32_t)(dy_scaled * dy_scaled);
                     if (d2 > minDist2)
                         continue;
                     else if(d2 == 0){
@@ -318,7 +322,7 @@ do {
                         continue;
                     }
                     PRINT("bounce detected on %d,%d",i,id);
-                    fixed_t d = (fixed_t)isqrt64(d2);
+                    fixed_t d = (fixed_t)isqrt32(d2) << 8;
                     fixed_t s = FIXED_DIV((minDist - d) >> 1, d);
                     dx = FIXED_MUL(dx, s);
                     dy = FIXED_MUL(dy, s);
@@ -342,16 +346,16 @@ do {
         if(particlePos[XID(i)] < Spacing){
             particlePos[XID(i)] = Spacing + nudge;
         }
-        if(particlePos[XID(i)] >= (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius){
-            particlePos[XID(i)] = (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius - nudge;
+        if(particlePos[XID(i)] >= fixed_mul_int(Spacing, CellNumX) - ParticleRadius){
+            particlePos[XID(i)] = fixed_mul_int(Spacing, CellNumX) - ParticleRadius - nudge;
         }
         
         // Y方向边界
         if(particlePos[YID(i)] < Spacing){
             particlePos[YID(i)] = Spacing + nudge;
         }
-        if(particlePos[YID(i)] >= (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius){
-            particlePos[YID(i)] = (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius - nudge;
+        if(particlePos[YID(i)] >= fixed_mul_int(Spacing, CellNumY) - ParticleRadius){
+            particlePos[YID(i)] = fixed_mul_int(Spacing, CellNumY) - ParticleRadius - nudge;
         }
     }
     return;

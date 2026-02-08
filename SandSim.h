@@ -2,14 +2,64 @@
 #include <stdio.h>
 #include <string.h>
 
-// fixed-point configuration (Q16.16)
+// fixed-point configuration (Q16.16, 32-bit only)
 typedef int32_t fixed_t;
 #define FIXED_SHIFT 16
 #define FIXED_ONE ((fixed_t)1 << FIXED_SHIFT)
 #define FIXED_FROM_INT(x) ((fixed_t)((x) << FIXED_SHIFT))
-#define FIXED_FROM_RATIO(num, den) ((fixed_t)(((int64_t)(num) * FIXED_ONE) / (den)))
-#define FIXED_MUL(a, b) ((fixed_t)(((int64_t)(a) * (b)) >> FIXED_SHIFT))
-#define FIXED_DIV(a, b) ((fixed_t)(((int64_t)(a) << FIXED_SHIFT) / (b)))
+#define FIXED_FROM_RATIO(num, den) ((fixed_t)((((fixed_t)(num)) * FIXED_ONE) / (den)))
+
+static inline fixed_t fixed_mul(fixed_t a, fixed_t b) {
+    int32_t a_hi = a >> 16;
+    int32_t a_lo = a & 0xFFFF;
+    int32_t b_hi = b >> 16;
+    int32_t b_lo = b & 0xFFFF;
+
+    int32_t hi = a_hi * b_hi;
+    int32_t mid = a_hi * b_lo + a_lo * b_hi;
+    uint32_t lo = (uint32_t)a_lo * (uint32_t)b_lo;
+
+    return (hi << 16) + mid + (int32_t)(lo >> 16);
+}
+
+static inline fixed_t fixed_div(fixed_t numerator, fixed_t denominator) {
+    if (denominator == 0) {
+        return 0;
+    }
+    int sign = 1;
+    uint32_t num = (uint32_t)numerator;
+    uint32_t den = (uint32_t)denominator;
+    if (numerator < 0) {
+        num = (uint32_t)(-numerator);
+        sign = -sign;
+    }
+    if (denominator < 0) {
+        den = (uint32_t)(-denominator);
+        sign = -sign;
+    }
+
+    uint32_t quotient = 0;
+    uint32_t remainder = num;
+
+    for (int i = 0; i < FIXED_SHIFT; i++) {
+        quotient <<= 1;
+        remainder <<= 1;
+        if (remainder >= den) {
+            remainder -= den;
+            quotient |= 1U;
+        }
+    }
+
+    int32_t result = (int32_t)quotient;
+    return sign < 0 ? -result : result;
+}
+
+static inline fixed_t fixed_mul_int(fixed_t value, int32_t multiplier) {
+    return (fixed_t)(value * multiplier);
+}
+
+#define FIXED_MUL(a, b) fixed_mul((a), (b))
+#define FIXED_DIV(a, b) fixed_div((a), (b))
 #define FIXED_CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
 
 //模拟所用的参数
