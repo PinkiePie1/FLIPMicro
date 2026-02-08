@@ -10,6 +10,10 @@ static fixed_t maxXPos;
 static fixed_t maxYPos;
 static fixed_t maxXBoundary;
 static fixed_t maxYBoundary;
+static fixed_t circleCenterX;
+static fixed_t circleCenterY;
+static fixed_t circleRadius;
+static fixed_t circleRadiusSq;
 const fixed_t nudge = FIXED_FROM_RATIO(1, 100);
 const fixed_t flipBlend = FIXED_FROM_RATIO(1, 5);
 const fixed_t half = FIXED_FROM_RATIO(1, 2);
@@ -79,6 +83,36 @@ static uint32_t isqrt32(uint32_t value) {
     }
 
     return res;
+}
+
+static uint64_t isqrt64(uint64_t value) {
+    uint64_t op = value;
+    uint64_t res = 0;
+    uint64_t one = 1ULL << 62;
+
+    while (one > op) {
+        one >>= 2;
+    }
+
+    while (one != 0) {
+        if (op >= res + one) {
+            op -= res + one;
+            res = (res >> 1) + one;
+        } else {
+            res >>= 1;
+        }
+        one >>= 2;
+    }
+
+    return res;
+}
+
+static fixed_t fixed_sqrt(fixed_t value) {
+    if (value <= 0) {
+        return 0;
+    }
+    uint64_t shifted = ((uint64_t)value) << FIXED_SHIFT;
+    return (fixed_t)isqrt64(shifted);
 }
 
 static void accumulate_u(fixed_t x, fixed_t y, fixed_t value) {
@@ -263,10 +297,20 @@ void InitParticles(){
     maxYPos = fixed_mul_int(Spacing, CellNumY - 1);
     maxXBoundary = fixed_mul_int(Spacing, CellNumX) - ParticleRadius;
     maxYBoundary = fixed_mul_int(Spacing, CellNumY) - ParticleRadius;
+    circleCenterX = fixed_mul_int(Spacing, (int)(CellNumX / 2));
+    circleCenterY = fixed_mul_int(Spacing, (int)(CellNumY / 2));
+    int radiusCells = (int)((CellNumX < CellNumY ? CellNumX : CellNumY) - 2) / 2;
+    circleRadius = fixed_mul_int(Spacing, radiusCells) + halfSpacing;
+    circleRadiusSq = FIXED_MUL(circleRadius, circleRadius);
 
     for (int x = 0; x < CellNumX; x++) {
         for (int y = 0; y < CellNumY; y++) {
-            if (x == 0 || y == 0 || x == CellNumX - 1 || y == CellNumY - 1) {
+            int dx2 = x * 2 - ((int)CellNumX - 1);
+            int dy2 = y * 2 - ((int)CellNumY - 1);
+            int dist2 = dx2 * dx2 + dy2 * dy2;
+            int radius2 = radiusCells * 2;
+            radius2 *= radius2;
+            if (dist2 > radius2) {
                 baseGridType[INDEX(x, y)] = SOLID_CELL;
             } else {
                 baseGridType[INDEX(x, y)] = AIR_CELL;
@@ -277,6 +321,9 @@ void InitParticles(){
 
     for (int i = 1; i < CellNumY ; i++){
         for(int j = 1; j < CellNumX; j++){
+            if (baseGridType[INDEX(j, i)] != AIR_CELL) {
+                continue;
+            }
 
             int particleIndex = p_num;
             particlePos[XID(particleIndex)] = fixed_mul_int(Spacing, j) + halfSpacing;
@@ -285,7 +332,6 @@ void InitParticles(){
             particleVel[YID(particleIndex)] = 0;
             if(p_num++ >= NumberOfParticles){return;} 
             PRINT("generated a particle %d at %ld, %ld. \n",particleIndex,(long)particlePos[XID(particleIndex)],(long)particlePos[YID(particleIndex)]);
-            
         }
     }
 
@@ -328,6 +374,22 @@ void ParticleIntegrate(fixed_t xAcceleration, fixed_t yAcceleration){
         if(particlePos[YID(i)] >= maxYBoundary){
             particlePos[YID(i)] = maxYBoundary - nudge;
             particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
+        }
+
+        fixed_t dx = particlePos[XID(i)] - circleCenterX;
+        fixed_t dy = particlePos[YID(i)] - circleCenterY;
+        int64_t dxSq = ((int64_t)dx * (int64_t)dx) >> FIXED_SHIFT;
+        int64_t dySq = ((int64_t)dy * (int64_t)dy) >> FIXED_SHIFT;
+        fixed_t distSq = (fixed_t)(dxSq + dySq);
+        if (distSq > circleRadiusSq) {
+            fixed_t dist = fixed_sqrt(distSq);
+            if (dist > 0) {
+                fixed_t scale = FIXED_DIV(circleRadius, dist);
+                particlePos[XID(i)] = circleCenterX + FIXED_MUL(dx, scale);
+                particlePos[YID(i)] = circleCenterY + FIXED_MUL(dy, scale);
+                particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS);
+                particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
+            }
         }
 
     }
