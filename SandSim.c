@@ -211,21 +211,21 @@ void ParticleIntegrate(fixed_t xAcceleration, fixed_t yAcceleration){
         // X方向边界
         if(particlePos[XID(i)] < Spacing){
             particlePos[XID(i)] = Spacing + nudge;
-            particleVel[XID(i)] *= BOUNCYNESS; // 反弹阻尼
+            particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS); // 反弹阻尼
         }
         if(particlePos[XID(i)] >= (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius){
             particlePos[XID(i)] = (fixed_t)(CellNumX * (int64_t)Spacing) - ParticleRadius - nudge;
-            particleVel[XID(i)] *= BOUNCYNESS;
+            particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS);
         }
         
         // Y方向边界
         if(particlePos[YID(i)] < Spacing){
             particlePos[YID(i)] = Spacing + nudge;
-            particleVel[YID(i)] *= BOUNCYNESS;
+            particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
         if(particlePos[YID(i)] >= (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius){
             particlePos[YID(i)] = (fixed_t)(CellNumY * (int64_t)Spacing) - ParticleRadius - nudge;
-            particleVel[YID(i)] *= BOUNCYNESS;
+            particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
 
     }
