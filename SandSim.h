@@ -63,8 +63,8 @@ static inline fixed_t fixed_mul_int(fixed_t value, int32_t multiplier) {
 #define FIXED_CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
 
 //模拟所用的参数
-#define NumberOfParticles 64U //粒子数量
-#define ParticleRadius FIXED_FROM_RATIO(5, 100) //粒子半径，这同时也是网格的间距
+#define NumberOfParticles 128U //粒子数量
+#define ParticleRadius FIXED_FROM_RATIO(4, 100) //粒子半径，这同时也是网格的间距
 #define Spacing FIXED_FROM_RATIO(1, 10) //网格间距
 #define CellNumX 16U //x轴方向的网格数量
 #define CellNumY 16U //y轴方向的网格数量
@@ -72,8 +72,8 @@ static inline fixed_t fixed_mul_int(fixed_t value, int32_t multiplier) {
 #define dt FIXED_FROM_RATIO(1, 60) //时间步长
 #define BOUNCYNESS FIXED_FROM_RATIO(-1, 5) //墙壁的弹性。
 
-#define overRelaxiation FIXED_FROM_RATIO(18, 10)
-#define stiffnessCoefficient FIXED_FROM_RATIO(3, 10)
+#define overRelaxiation FIXED_FROM_RATIO(19, 10)
+#define stiffnessCoefficient FIXED_FROM_RATIO(2, 10)
 
 // 网格类型
 #define AIR_CELL 0U

@@ -11,7 +11,7 @@ static fixed_t maxYPos;
 static fixed_t maxXBoundary;
 static fixed_t maxYBoundary;
 const fixed_t nudge = FIXED_FROM_RATIO(1, 100);
-const fixed_t flipBlend = FIXED_FROM_RATIO(1, 5);
+const fixed_t flipBlend = FIXED_FROM_RATIO(1, 10);
 const fixed_t half = FIXED_FROM_RATIO(1, 2);
 
 //各种数据的缓存
