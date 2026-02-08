@@ -38,15 +38,15 @@ static inline fixed_t fixed_div(fixed_t numerator, fixed_t denominator) {
         sign = -sign;
     }
 
-    uint32_t quotient = 0;
-    uint32_t remainder = num;
+    uint32_t integer_part = num / den;
+    uint32_t remainder = num % den;
+    uint32_t quotient = integer_part << FIXED_SHIFT;
 
     for (int i = 0; i < FIXED_SHIFT; i++) {
-        quotient <<= 1;
         remainder <<= 1;
         if (remainder >= den) {
             remainder -= den;
-            quotient |= 1U;
+            quotient |= (1U << (FIXED_SHIFT - 1 - i));
         }
     }
 
