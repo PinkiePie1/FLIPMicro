@@ -45,6 +45,10 @@ static fixed_t clamp_fixed(fixed_t value, fixed_t min_value, fixed_t max_value) 
     return value;
 }
 
+static inline int fixed_to_int(fixed_t value) {
+    return (int)(value >> FIXED_SHIFT);
+}
+
 #define U_INDEX(x,y) ((x) * CellNumY + (y))
 #define V_INDEX(x,y) ((x) * (CellNumY + 1) + (y))
 
@@ -326,8 +330,8 @@ void PushParticlesApart(unsigned int nIters){
         fixed_t x = particlePos[XID(i)];
         fixed_t y = particlePos[YID(i)];
 
-        unsigned int xi = (unsigned int)(x / Spacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
-        unsigned int yi = (unsigned int)(y / Spacing); 
+        unsigned int xi = (unsigned int)fixed_to_int(FIXED_MUL(x, invertSpacing)); //x和y的网格坐标，即这个粒子在网格中所处的位置
+        unsigned int yi = (unsigned int)fixed_to_int(FIXED_MUL(y, invertSpacing)); 
 
         Count[INDEX(xi,yi)] ++;
     }
@@ -346,8 +350,8 @@ void PushParticlesApart(unsigned int nIters){
         fixed_t x = particlePos[XID(i)];//取出xy坐标
         fixed_t y = particlePos[YID(i)];
 
-        unsigned int xi = (unsigned int)(x / Spacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
-        unsigned int yi = (unsigned int)(y / Spacing); 
+        unsigned int xi = (unsigned int)fixed_to_int(FIXED_MUL(x, invertSpacing)); //x和y的网格坐标，即这个粒子在网格中所处的位置
+        unsigned int yi = (unsigned int)fixed_to_int(FIXED_MUL(y, invertSpacing)); 
 
         int gridindex = --Count[INDEX(xi,yi)]; //对应位置先减1，再放入排序好了的目标缓存
         particlePosId[gridindex] = i; //放入排序的缓存
@@ -364,8 +368,8 @@ do {
         fixed_t px = particlePos[XID(i)];
         fixed_t py = particlePos[YID(i)];
 
-        unsigned int pxi = (unsigned int)(px / Spacing);
-        unsigned int pyi = (unsigned int)(py / Spacing);
+        unsigned int pxi = (unsigned int)fixed_to_int(FIXED_MUL(px, invertSpacing));
+        unsigned int pyi = (unsigned int)fixed_to_int(FIXED_MUL(py, invertSpacing));
         unsigned int x0 = pxi > 0 ? pxi - 1 : 0;
         unsigned int y0 = pyi > 0 ? pyi - 1 : 0;
         unsigned int x1 = (pxi + 1 < CellNumX) ? pxi + 1 : CellNumX - 1;
@@ -457,15 +461,15 @@ do {
         fixed_t x_shifted = x - halfSpacing;
         fixed_t y_shifted = y - halfSpacing;
 
-        int x0 = (int)(x_shifted / Spacing);
-        int y0 = (int)(y_shifted / Spacing);
+        int x0 = fixed_to_int(FIXED_MUL(x_shifted, invertSpacing));
+        int y0 = fixed_to_int(FIXED_MUL(y_shifted, invertSpacing));
         x0 = clamp_index(x0, 0, CellNumX - 2);
         y0 = clamp_index(y0, 0, CellNumY - 2);
         int x1 = x0 + 1;
         int y1 = y0 + 1;
 
-        fixed_t tx = FIXED_DIV(x_shifted - fixed_mul_int(Spacing, x0), Spacing);
-        fixed_t ty = FIXED_DIV(y_shifted - fixed_mul_int(Spacing, y0), Spacing);
+        fixed_t tx = FIXED_MUL(x_shifted - fixed_mul_int(Spacing, x0), invertSpacing);
+        fixed_t ty = FIXED_MUL(y_shifted - fixed_mul_int(Spacing, y0), invertSpacing);
         tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
         ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
 
@@ -532,8 +536,8 @@ void particles_to_grid() {
         fixed_t x = particlePos[XID(p)];
         fixed_t y = particlePos[YID(p)];
         //计算粒子对应的网格位置和delta x y
-        int xcell = (int)(x / Spacing);
-        int ycell = (int)(y / Spacing);
+        int xcell = fixed_to_int(FIXED_MUL(x, invertSpacing));
+        int ycell = fixed_to_int(FIXED_MUL(y, invertSpacing));
         xcell = clamp_index(xcell, 0, CellNumX - 1);
         ycell = clamp_index(ycell, 0, CellNumY - 1);
 
@@ -661,9 +665,10 @@ void compute_grid_forces(unsigned int nIters) {
  */ 
 
 void grid_to_particles() {
+    fixed_t maxX = fixed_mul_int(Spacing, CellNumX - 1);
+    fixed_t maxY = fixed_mul_int(Spacing, CellNumY - 1);
+
     for(int p=0; p<NumberOfParticles; p++){
-        fixed_t maxX = fixed_mul_int(Spacing, CellNumX - 1);
-        fixed_t maxY = fixed_mul_int(Spacing, CellNumY - 1);
         fixed_t x = clamp_fixed(particlePos[XID(p)], Spacing, maxX);
         fixed_t y = clamp_fixed(particlePos[YID(p)], Spacing, maxY);
 
@@ -697,8 +702,8 @@ void visualize_grid() {
     
     // 标记粒子位置
     for(int p=0; p<NumberOfParticles; p++){
-        int x = (int)(particlePos[XID(p)] / Spacing);
-        int y = (int)(particlePos[YID(p)] / Spacing);
+        int x = fixed_to_int(FIXED_MUL(particlePos[XID(p)], invertSpacing));
+        int y = fixed_to_int(FIXED_MUL(particlePos[YID(p)], invertSpacing));
 
         visual_buffer[y][x] = 'x';
     }
