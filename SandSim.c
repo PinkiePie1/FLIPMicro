@@ -7,6 +7,8 @@ const fixed_t initialDensity = FIXED_FROM_INT(4);
 const fixed_t nudge = FIXED_FROM_RATIO(1, 100);
 const fixed_t flipBlend = FIXED_FROM_RATIO(1, 5);
 const fixed_t half = FIXED_FROM_RATIO(1, 2);
+const fixed_t one_third = FIXED_FROM_RATIO(1, 3);
+const fixed_t quarter = FIXED_FROM_RATIO(1, 4);
 
 //各种数据的缓存
 fixed_t particlePos[NumberOfParticles*2]; //粒子的位置，x位置为2*n，y位置为2n+1
@@ -488,7 +490,21 @@ void compute_grid_forces(unsigned int nIters) {
                 if (s_sum == 0) {
                     continue;
                 }
-                fixed_t s = FIXED_DIV(FIXED_ONE, FIXED_FROM_INT(s_sum));
+                fixed_t s;
+                switch (s_sum) {
+                    case 1:
+                        s = FIXED_ONE;
+                        break;
+                    case 2:
+                        s = half;
+                        break;
+                    case 3:
+                        s = one_third;
+                        break;
+                    default:
+                        s = quarter;
+                        break;
+                }
 
                 if (s1) {
                     uVel[U_INDEX(xcell, ycell)] += FIXED_MUL(d, s);
