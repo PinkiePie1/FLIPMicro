@@ -15,7 +15,7 @@ void main(){
  //           visualize_grid();
  //           printf("%d\n",dummy++);  
  //       }
-        ParticleIntegrate(0.0f,-9.8f);
+        ParticleIntegrate(0, FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
         density_update();
         particles_to_grid();
@@ -31,7 +31,7 @@ for (int j =0;j<5;j++)
             printf("%d\n",dummy++);
            
         }
-        ParticleIntegrate(5.0f,-9.8f);
+        ParticleIntegrate(FIXED_FROM_INT(5), FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
         density_update();
         particles_to_grid();
@@ -44,7 +44,7 @@ for (int j =0;j<5;j++)
             visualize_grid();
             printf("%d\n",dummy++);         
         }
-        ParticleIntegrate(-5.0f,-9.8f);
+        ParticleIntegrate(FIXED_FROM_INT(-5), FIXED_FROM_RATIO(-98, 10));
         PushParticlesApart(2);
         density_update();
         particles_to_grid();
