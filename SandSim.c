@@ -2,24 +2,29 @@
 #include "main.h"
 
 //加快运算速度，一些除法可以先算。
-const float invertSpacing = 1.0f/Spacing;
-const float initialDensity = 4.0f;
+static fixed_t invertSpacing;
+const fixed_t initialDensity = FIXED_FROM_INT(4);
+const fixed_t nudge = FIXED_FROM_RATIO(1, 100);
+const fixed_t flipBlend = FIXED_FROM_RATIO(1, 5);
+const fixed_t half = FIXED_FROM_RATIO(1, 2);
+const fixed_t one_third = FIXED_FROM_RATIO(1, 3);
+const fixed_t quarter = FIXED_FROM_RATIO(1, 4);
 
 //各种数据的缓存
-float particlePos[NumberOfParticles*2]; //粒子的位置，x位置为2*n，y位置为2n+1
-float particleVel[NumberOfParticles*2]; //粒子的速度，x速度为2*n，y速度为2n+1
+fixed_t particlePos[NumberOfParticles*2]; //粒子的位置，x位置为2*n，y位置为2n+1
+fixed_t particleVel[NumberOfParticles*2]; //粒子的速度，x速度为2*n，y速度为2n+1
 
-float uVel[(CellNumX + 1) * CellNumY];   //u分量 (x方向)
-float vVel[CellNumX * (CellNumY + 1)];   //v分量 (y方向)
-float uPrev[(CellNumX + 1) * CellNumY];  //上一帧u
-float vPrev[CellNumX * (CellNumY + 1)];  //上一帧v
-float uWeights[(CellNumX + 1) * CellNumY];
-float vWeights[CellNumX * (CellNumY + 1)];
+fixed_t uVel[(CellNumX + 1) * CellNumY];   //u分量 (x方向)
+fixed_t vVel[CellNumX * (CellNumY + 1)];   //v分量 (y方向)
+fixed_t uPrev[(CellNumX + 1) * CellNumY];  //上一帧u
+fixed_t vPrev[CellNumX * (CellNumY + 1)];  //上一帧v
+fixed_t uWeights[(CellNumX + 1) * CellNumY];
+fixed_t vWeights[CellNumX * (CellNumY + 1)];
 unsigned int gridType[CellCount]; //网格是气体还是液体
 
 unsigned int Count[CellCount+1U]; //计算粒子碰撞所用的缓存，其中每个entry对应了应该去哪里找粒子。
 unsigned int density[CellCount];//框内粒子情况，可用此作为显示。
-float particlePosId[NumberOfParticles]; //经过hashgrid排序之后的粒子位置
+unsigned int particlePosId[NumberOfParticles]; //经过hashgrid排序之后的粒子位置
 void printLocation(unsigned int n);
 
 static int clamp_index(int value, int min_value, int max_value) {
@@ -35,129 +40,152 @@ static int clamp_index(int value, int min_value, int max_value) {
 #define U_INDEX(x,y) ((x) * CellNumY + (y))
 #define V_INDEX(x,y) ((x) * (CellNumY + 1) + (y))
 
-static void accumulate_u(float x, float y, float value) {
-    float fx = x * invertSpacing;
-    float fy = y * invertSpacing - 0.5f;
-    int x0 = (int)floorf(fx);
-    int y0 = (int)floorf(fy);
+static uint32_t isqrt32(uint32_t value) {
+    uint32_t op = value;
+    uint32_t res = 0;
+    uint32_t one = 1U << 30;
+
+    while (one > op) {
+        one >>= 2;
+    }
+
+    while (one != 0) {
+        if (op >= res + one) {
+            op -= res + one;
+            res = (res >> 1) + one;
+        } else {
+            res >>= 1;
+        }
+        one >>= 2;
+    }
+
+    return res;
+}
+
+static void accumulate_u(fixed_t x, fixed_t y, fixed_t value) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing);
+    fixed_t fy = FIXED_MUL(y, invertSpacing) - half;
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
     x0 = clamp_index(x0, 0, CellNumX - 1);
     y0 = clamp_index(y0, 0, CellNumY - 2);
-    float tx = fx - (float)x0;
-    float ty = fy - (float)y0;
-    tx = fminf(fmaxf(tx, 0.0f), 1.0f);
-    ty = fminf(fmaxf(ty, 0.0f), 1.0f);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
     int x1 = x0 + 1;
     int y1 = y0 + 1;
 
-    float w00 = (1.0f - tx) * (1.0f - ty);
-    float w10 = tx * (1.0f - ty);
-    float w01 = (1.0f - tx) * ty;
-    float w11 = tx * ty;
+    fixed_t w00 = FIXED_MUL((FIXED_ONE - tx), (FIXED_ONE - ty));
+    fixed_t w10 = FIXED_MUL(tx, (FIXED_ONE - ty));
+    fixed_t w01 = FIXED_MUL((FIXED_ONE - tx), ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
 
-    uVel[U_INDEX(x0, y0)] += value * w00;
+    uVel[U_INDEX(x0, y0)] += FIXED_MUL(value, w00);
     uWeights[U_INDEX(x0, y0)] += w00;
-    uVel[U_INDEX(x1, y0)] += value * w10;
+    uVel[U_INDEX(x1, y0)] += FIXED_MUL(value, w10);
     uWeights[U_INDEX(x1, y0)] += w10;
-    uVel[U_INDEX(x0, y1)] += value * w01;
+    uVel[U_INDEX(x0, y1)] += FIXED_MUL(value, w01);
     uWeights[U_INDEX(x0, y1)] += w01;
-    uVel[U_INDEX(x1, y1)] += value * w11;
+    uVel[U_INDEX(x1, y1)] += FIXED_MUL(value, w11);
     uWeights[U_INDEX(x1, y1)] += w11;
 }
 
-static void accumulate_v(float x, float y, float value) {
-    float fx = x * invertSpacing - 0.5f;
-    float fy = y * invertSpacing;
-    int x0 = (int)floorf(fx);
-    int y0 = (int)floorf(fy);
+static void accumulate_v(fixed_t x, fixed_t y, fixed_t value) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing) - half;
+    fixed_t fy = FIXED_MUL(y, invertSpacing);
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
     x0 = clamp_index(x0, 0, CellNumX - 2);
     y0 = clamp_index(y0, 0, CellNumY - 1);
-    float tx = fx - (float)x0;
-    float ty = fy - (float)y0;
-    tx = fminf(fmaxf(tx, 0.0f), 1.0f);
-    ty = fminf(fmaxf(ty, 0.0f), 1.0f);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
     int x1 = x0 + 1;
     int y1 = y0 + 1;
 
-    float w00 = (1.0f - tx) * (1.0f - ty);
-    float w10 = tx * (1.0f - ty);
-    float w01 = (1.0f - tx) * ty;
-    float w11 = tx * ty;
+    fixed_t w00 = FIXED_MUL((FIXED_ONE - tx), (FIXED_ONE - ty));
+    fixed_t w10 = FIXED_MUL(tx, (FIXED_ONE - ty));
+    fixed_t w01 = FIXED_MUL((FIXED_ONE - tx), ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
 
-    vVel[V_INDEX(x0, y0)] += value * w00;
+    vVel[V_INDEX(x0, y0)] += FIXED_MUL(value, w00);
     vWeights[V_INDEX(x0, y0)] += w00;
-    vVel[V_INDEX(x1, y0)] += value * w10;
+    vVel[V_INDEX(x1, y0)] += FIXED_MUL(value, w10);
     vWeights[V_INDEX(x1, y0)] += w10;
-    vVel[V_INDEX(x0, y1)] += value * w01;
+    vVel[V_INDEX(x0, y1)] += FIXED_MUL(value, w01);
     vWeights[V_INDEX(x0, y1)] += w01;
-    vVel[V_INDEX(x1, y1)] += value * w11;
+    vVel[V_INDEX(x1, y1)] += FIXED_MUL(value, w11);
     vWeights[V_INDEX(x1, y1)] += w11;
 }
 
-static float sample_u(float x, float y, const float *grid) {
-    float fx = x * invertSpacing;
-    float fy = y * invertSpacing - 0.5f;
-    int x0 = (int)floorf(fx);
-    int y0 = (int)floorf(fy);
+static fixed_t sample_u(fixed_t x, fixed_t y, const fixed_t *grid) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing);
+    fixed_t fy = FIXED_MUL(y, invertSpacing) - half;
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
     x0 = clamp_index(x0, 0, CellNumX - 1);
     y0 = clamp_index(y0, 0, CellNumY - 2);
-    float tx = fx - (float)x0;
-    float ty = fy - (float)y0;
-    tx = fminf(fmaxf(tx, 0.0f), 1.0f);
-    ty = fminf(fmaxf(ty, 0.0f), 1.0f);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
     int x1 = x0 + 1;
     int y1 = y0 + 1;
 
-    float w00 = (1.0f - tx) * (1.0f - ty);
-    float w10 = tx * (1.0f - ty);
-    float w01 = (1.0f - tx) * ty;
-    float w11 = tx * ty;
+    fixed_t w00 = FIXED_MUL((FIXED_ONE - tx), (FIXED_ONE - ty));
+    fixed_t w10 = FIXED_MUL(tx, (FIXED_ONE - ty));
+    fixed_t w01 = FIXED_MUL((FIXED_ONE - tx), ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
 
-    return grid[U_INDEX(x0, y0)] * w00 +
-        grid[U_INDEX(x1, y0)] * w10 +
-        grid[U_INDEX(x0, y1)] * w01 +
-        grid[U_INDEX(x1, y1)] * w11;
+    return FIXED_MUL(grid[U_INDEX(x0, y0)], w00) +
+        FIXED_MUL(grid[U_INDEX(x1, y0)], w10) +
+        FIXED_MUL(grid[U_INDEX(x0, y1)], w01) +
+        FIXED_MUL(grid[U_INDEX(x1, y1)], w11);
 }
 
-static float sample_v(float x, float y, const float *grid) {
-    float fx = x * invertSpacing - 0.5f;
-    float fy = y * invertSpacing;
-    int x0 = (int)floorf(fx);
-    int y0 = (int)floorf(fy);
+static fixed_t sample_v(fixed_t x, fixed_t y, const fixed_t *grid) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing) - half;
+    fixed_t fy = FIXED_MUL(y, invertSpacing);
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
     x0 = clamp_index(x0, 0, CellNumX - 2);
     y0 = clamp_index(y0, 0, CellNumY - 1);
-    float tx = fx - (float)x0;
-    float ty = fy - (float)y0;
-    tx = fminf(fmaxf(tx, 0.0f), 1.0f);
-    ty = fminf(fmaxf(ty, 0.0f), 1.0f);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
     int x1 = x0 + 1;
     int y1 = y0 + 1;
 
-    float w00 = (1.0f - tx) * (1.0f - ty);
-    float w10 = tx * (1.0f - ty);
-    float w01 = (1.0f - tx) * ty;
-    float w11 = tx * ty;
+    fixed_t w00 = FIXED_MUL((FIXED_ONE - tx), (FIXED_ONE - ty));
+    fixed_t w10 = FIXED_MUL(tx, (FIXED_ONE - ty));
+    fixed_t w01 = FIXED_MUL((FIXED_ONE - tx), ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
 
-    return grid[V_INDEX(x0, y0)] * w00 +
-        grid[V_INDEX(x1, y0)] * w10 +
-        grid[V_INDEX(x0, y1)] * w01 +
-        grid[V_INDEX(x1, y1)] * w11;
+    return FIXED_MUL(grid[V_INDEX(x0, y0)], w00) +
+        FIXED_MUL(grid[V_INDEX(x1, y0)], w10) +
+        FIXED_MUL(grid[V_INDEX(x0, y1)], w01) +
+        FIXED_MUL(grid[V_INDEX(x1, y1)], w11);
 }
 
 void InitParticles(){
     //在每个格子里生成一个。如果全填满了则不再生成。
     int p_num = 0;
+    invertSpacing = FIXED_DIV(FIXED_ONE, Spacing);
 
-    float half_d = Spacing/2.0f; //半个间距。
+    fixed_t half_d = FIXED_MUL(Spacing, half); //半个间距。
     for (int i = 1; i < CellNumY ; i++){
         for(int j = 1; j < CellNumX; j++){
 
             int particleIndex = p_num;
-            particlePos[XID(particleIndex)] = j*Spacing+half_d;
-            particlePos[YID(particleIndex)] = i*Spacing+half_d;
-            particleVel[XID(particleIndex)] = 0.0f;
-            particleVel[YID(particleIndex)] = 0.0f;
+            particlePos[XID(particleIndex)] = fixed_mul_int(Spacing, j) + half_d;
+            particlePos[YID(particleIndex)] = fixed_mul_int(Spacing, i) + half_d;
+            particleVel[XID(particleIndex)] = 0;
+            particleVel[YID(particleIndex)] = 0;
             if(p_num++ >= NumberOfParticles){return;} 
-            PRINT("generated a particle %d at %f, %f. \n",particleIndex,j*Spacing+half_d,i*Spacing+half_d);
+            PRINT("generated a particle %d at %ld, %ld. \n",particleIndex,(long)particlePos[XID(particleIndex)],(long)particlePos[YID(particleIndex)]);
             
         }
     }
@@ -173,34 +201,34 @@ void InitParticles(){
  *
  * @note 也会仿真墙壁。 
  */ 
-void ParticleIntegrate(float xAcceleration, float yAcceleration){
+void ParticleIntegrate(fixed_t xAcceleration, fixed_t yAcceleration){
     for(unsigned int i = 0; i < NumberOfParticles ; i++){
         //先算速度
-        particleVel[XID(i)] += xAcceleration*dt;
-        particleVel[YID(i)] += yAcceleration*dt;
+        particleVel[XID(i)] += FIXED_MUL(xAcceleration, dt);
+        particleVel[YID(i)] += FIXED_MUL(yAcceleration, dt);
         //再算位置
-        particlePos[XID(i)] += particleVel[XID(i)] * dt;
-        particlePos[YID(i)] += particleVel[YID(i)] * dt; 
+        particlePos[XID(i)] += FIXED_MUL(particleVel[XID(i)], dt);
+        particlePos[YID(i)] += FIXED_MUL(particleVel[YID(i)], dt); 
 
         // 边界。因为网格数据结构的原因，第一行和第一列是没有速度量的，所以得把粒子挤出去，第一行和第一列不放粒子。
         // X方向边界
         if(particlePos[XID(i)] < Spacing){
-            particlePos[XID(i)] = Spacing + 0.01f;
-            particleVel[XID(i)] *= BOUNCYNESS; // 反弹阻尼
+            particlePos[XID(i)] = Spacing + nudge;
+            particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS); // 反弹阻尼
         }
-        if(particlePos[XID(i)] >= CellNumX*Spacing-ParticleRadius){
-            particlePos[XID(i)] = CellNumX*Spacing-ParticleRadius - 0.01f;
-            particleVel[XID(i)] *= BOUNCYNESS;
+        if(particlePos[XID(i)] >= fixed_mul_int(Spacing, CellNumX) - ParticleRadius){
+            particlePos[XID(i)] = fixed_mul_int(Spacing, CellNumX) - ParticleRadius - nudge;
+            particleVel[XID(i)] = FIXED_MUL(particleVel[XID(i)], BOUNCYNESS);
         }
         
         // Y方向边界
         if(particlePos[YID(i)] < Spacing){
-            particlePos[YID(i)] = Spacing + 0.01f;
-            particleVel[YID(i)] *= BOUNCYNESS;
+            particlePos[YID(i)] = Spacing + nudge;
+            particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
-        if(particlePos[YID(i)] >= CellNumY*Spacing-ParticleRadius){
-            particlePos[YID(i)] = CellNumY*Spacing-ParticleRadius - 0.01f;
-            particleVel[YID(i)] *= BOUNCYNESS;
+        if(particlePos[YID(i)] >= fixed_mul_int(Spacing, CellNumY) - ParticleRadius){
+            particlePos[YID(i)] = fixed_mul_int(Spacing, CellNumY) - ParticleRadius - nudge;
+            particleVel[YID(i)] = FIXED_MUL(particleVel[YID(i)], BOUNCYNESS);
         }
 
     }
@@ -223,11 +251,11 @@ void PushParticlesApart(unsigned int nIters){
 
     //数数
     for (unsigned int i=0;i<NumberOfParticles;i++){
-        float x = particlePos[XID(i)];
-        float y = particlePos[YID(i)];
+        fixed_t x = particlePos[XID(i)];
+        fixed_t y = particlePos[YID(i)];
 
-        unsigned int xi = floor(x*invertSpacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
-        unsigned int yi = floor(y*invertSpacing); 
+        unsigned int xi = (unsigned int)(x / Spacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
+        unsigned int yi = (unsigned int)(y / Spacing); 
 
         Count[INDEX(xi,yi)] ++;
     }
@@ -243,11 +271,11 @@ void PushParticlesApart(unsigned int nIters){
     
     //将排序好的粒子塞入对应的位置缓存中
     for (unsigned int i=0;i<NumberOfParticles;i++){
-        float x = particlePos[XID(i)];//取出xy坐标
-        float y = particlePos[YID(i)];
+        fixed_t x = particlePos[XID(i)];//取出xy坐标
+        fixed_t y = particlePos[YID(i)];
 
-        unsigned int xi = floor(x*invertSpacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
-        unsigned int yi = floor(y*invertSpacing); 
+        unsigned int xi = (unsigned int)(x / Spacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
+        unsigned int yi = (unsigned int)(y / Spacing); 
 
         int gridindex = --Count[INDEX(xi,yi)]; //对应位置先减1，再放入排序好了的目标缓存
         particlePosId[gridindex] = i; //放入排序的缓存
@@ -256,19 +284,20 @@ void PushParticlesApart(unsigned int nIters){
     
 //开始把粒子推开
 
-float minDist = 2.0f * ParticleRadius;
-float minDist2 = minDist * minDist;
+fixed_t minDist = ParticleRadius * 2;
+fixed_t minDist_scaled = minDist >> 8;
+uint32_t minDist2 = (uint32_t)minDist_scaled * (uint32_t)minDist_scaled;
 do {
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        float px = particlePos[XID(i)];
-        float py = particlePos[YID(i)];
+        fixed_t px = particlePos[XID(i)];
+        fixed_t py = particlePos[YID(i)];
 
-        unsigned int pxi = floor(px * invertSpacing);
-        unsigned int pyi = floor(py * invertSpacing);
-        unsigned int x0 = fmax(pxi - 1, 0);
-        unsigned int y0 = fmax(pyi - 1, 0);
-        unsigned int x1 = fmin(pxi + 1, CellNumX- 1);
-        unsigned int y1 = fmin(pyi + 1, CellNumY - 1);
+        unsigned int pxi = (unsigned int)(px / Spacing);
+        unsigned int pyi = (unsigned int)(py / Spacing);
+        unsigned int x0 = pxi > 0 ? pxi - 1 : 0;
+        unsigned int y0 = pyi > 0 ? pyi - 1 : 0;
+        unsigned int x1 = (pxi + 1 < CellNumX) ? pxi + 1 : CellNumX - 1;
+        unsigned int y1 = (pyi + 1 < CellNumY) ? pyi + 1 : CellNumY - 1;
 
         for (int xi = x0; xi <= x1; xi++) {
             for (int yi = y0; yi <= y1; yi++) {
@@ -279,23 +308,26 @@ do {
                     int id = particlePosId[j];
                     if (id == i)
                         continue;
-                    float qx = particlePos[XID(id)];
-                    float qy = particlePos[YID(id)];
+                    fixed_t qx = particlePos[XID(id)];
+                    fixed_t qy = particlePos[YID(id)];
 
-                    float dx = qx - px;
-                    float dy = qy - py;
-                    float d2 = dx * dx + dy * dy;
-                    if (d2 > minDist2) 
+                    fixed_t dx = qx - px;
+                    fixed_t dy = qy - py;
+                    int32_t dx_scaled = dx >> 8;
+                    int32_t dy_scaled = dy >> 8;
+                    uint32_t d2 = (uint32_t)(dx_scaled * dx_scaled) +
+                        (uint32_t)(dy_scaled * dy_scaled);
+                    if (d2 > minDist2)
                         continue;
-                    else if(d2 == 0.0){
+                    else if(d2 == 0){
                         PRINT("kiss detected on %d,%d",i,id);
                         continue;
                     }
                     PRINT("bounce detected on %d,%d",i,id);
-                    float d = sqrt(d2);
-                    float s = 0.5 * (minDist - d) / d;
-                    dx *= s;
-                    dy *= s;
+                    fixed_t d = (fixed_t)isqrt32(d2) << 8;
+                    fixed_t s = FIXED_DIV((minDist - d) >> 1, d);
+                    dx = FIXED_MUL(dx, s);
+                    dy = FIXED_MUL(dy, s);
                     particlePos[XID(i)] -= dx;
                     particlePos[YID(i)] -= dy;
                     particlePos[XID(id)] += dx;
@@ -314,18 +346,18 @@ do {
     //推完了，再处理一次边界
     for(int i = 0; i < NumberOfParticles; i++){
         if(particlePos[XID(i)] < Spacing){
-            particlePos[XID(i)] = Spacing + 0.01f;
+            particlePos[XID(i)] = Spacing + nudge;
         }
-        if(particlePos[XID(i)] >= CellNumX*Spacing-ParticleRadius){
-            particlePos[XID(i)] = CellNumX*Spacing-ParticleRadius - 0.01f;
+        if(particlePos[XID(i)] >= fixed_mul_int(Spacing, CellNumX) - ParticleRadius){
+            particlePos[XID(i)] = fixed_mul_int(Spacing, CellNumX) - ParticleRadius - nudge;
         }
         
         // Y方向边界
         if(particlePos[YID(i)] < Spacing){
-            particlePos[YID(i)] = Spacing + 0.01f;
+            particlePos[YID(i)] = Spacing + nudge;
         }
-        if(particlePos[YID(i)] >= CellNumY*Spacing-ParticleRadius){
-            particlePos[YID(i)] = CellNumY*Spacing-ParticleRadius - 0.01f;
+        if(particlePos[YID(i)] >= fixed_mul_int(Spacing, CellNumY) - ParticleRadius){
+            particlePos[YID(i)] = fixed_mul_int(Spacing, CellNumY) - ParticleRadius - nudge;
         }
     }
     return;
@@ -344,10 +376,10 @@ do {
     memset(density,0,sizeof(density));
     //数数
     for (unsigned int i=0;i<NumberOfParticles;i++){
-        float x = particlePos[XID(i)];
-        float y = particlePos[YID(i)];
-        unsigned int xi = floor(x*invertSpacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
-        unsigned int yi = floor(y*invertSpacing); 
+        fixed_t x = particlePos[XID(i)];
+        fixed_t y = particlePos[YID(i)];
+        unsigned int xi = (unsigned int)(x / Spacing); //x和y的网格坐标，即这个粒子在网格中所处的位置
+        unsigned int yi = (unsigned int)(y / Spacing);
         density[INDEX(xi,yi)] ++;
     }
     return;
@@ -375,15 +407,15 @@ void particles_to_grid() {
 
     for(int p=0; p<NumberOfParticles; p++){
 
-        float x = particlePos[XID(p)];
-        float y = particlePos[YID(p)];
+        fixed_t x = particlePos[XID(p)];
+        fixed_t y = particlePos[YID(p)];
         //计算粒子对应的网格位置和delta x y
-        int xcell = (int)floorf(x * invertSpacing);
-        int ycell = (int)floorf(y * invertSpacing);
+        int xcell = (int)(x / Spacing);
+        int ycell = (int)(y / Spacing);
         xcell = clamp_index(xcell, 0, CellNumX - 1);
         ycell = clamp_index(ycell, 0, CellNumY - 1);
 
-        PRINT("calculate particle %d at %.2f,%.2f. xcell: %d, ycell: %d.\n",p,x,y,xcell,ycell);
+        PRINT("calculate particle %d at %ld,%ld. xcell: %d, ycell: %d.\n",p,(long)x,(long)y,xcell,ycell);
         
         int gridIndex = INDEX(xcell,ycell);//对应的网格在缓存中的位置。
         gridType[gridIndex] = 1;//对应网格是液体网格
@@ -396,14 +428,14 @@ void particles_to_grid() {
     for (int i=0;i<CellNumX + 1;i++){
        for (int j=0;j<CellNumY;j++){
         if(uWeights[U_INDEX(i,j)]){ //显然如果这里是空气那就不用算了，不应该处以0
-            uVel[U_INDEX(i,j)] /= uWeights[U_INDEX(i,j)];
+            uVel[U_INDEX(i,j)] = FIXED_DIV(uVel[U_INDEX(i,j)], uWeights[U_INDEX(i,j)]);
          }
        }
     }
     for (int i=0;i<CellNumX;i++){
        for (int j=0;j<CellNumY + 1;j++){
         if(vWeights[V_INDEX(i,j)]){ //显然如果这里是空气那就不用算了，不应该处以0
-            vVel[V_INDEX(i,j)] /= vWeights[V_INDEX(i,j)];
+            vVel[V_INDEX(i,j)] = FIXED_DIV(vVel[V_INDEX(i,j)], vWeights[V_INDEX(i,j)]);
         }
        }
     }
@@ -430,21 +462,16 @@ void compute_grid_forces(unsigned int nIters) {
                 //如果grid是液体，可以计算divergence。首先求出这个grid的xy坐标。
 
                 //计算divergence
-                float d = uVel[U_INDEX(xcell + 1, ycell)]
+                fixed_t d = uVel[U_INDEX(xcell + 1, ycell)]
                     - uVel[U_INDEX(xcell, ycell)]
                     + vVel[V_INDEX(xcell, ycell + 1)]
                     - vVel[V_INDEX(xcell, ycell)];//计算divergence
-                d = d * overRelaxiation * dt * invertSpacing;//overrelax并缩放到时间步长
+                d = FIXED_MUL(d, FIXED_MUL(overRelaxiation, FIXED_MUL(dt, invertSpacing)));//overrelax并缩放到时间步长
 
-                if(density[INDEX(xcell,ycell)] > initialDensity){
-                    float compression = (float)density[INDEX(xcell,ycell)]-initialDensity;
-                    compression *= stiffnessCoefficient;
+                if(FIXED_FROM_INT(density[INDEX(xcell,ycell)]) > initialDensity){
+                    fixed_t compression = FIXED_FROM_INT(density[INDEX(xcell,ycell)]) - initialDensity;
+                    compression = FIXED_MUL(compression, stiffnessCoefficient);
                     d = d - compression;//drift相关,大概是不应该这样写的，密度对每个框框还有个权重。
-                }
-
-                if (isnan(d)){
-                    ;
-                    printf("something wrong with divergence.\n xcell: %d, ycell: %d, gridType: %d\n",xcell,ycell,gridType[INDEX(xcell,ycell)]);
                 }
 
                 //处理墙壁与空气邻接
@@ -463,12 +490,34 @@ void compute_grid_forces(unsigned int nIters) {
                 if (s_sum == 0) {
                     continue;
                 }
-                float s = 1.0f / s_sum;
+                fixed_t s;
+                switch (s_sum) {
+                    case 1:
+                        s = FIXED_ONE;
+                        break;
+                    case 2:
+                        s = half;
+                        break;
+                    case 3:
+                        s = one_third;
+                        break;
+                    default:
+                        s = quarter;
+                        break;
+                }
 
-                uVel[U_INDEX(xcell, ycell)] += d * s1 * s;
-                uVel[U_INDEX(xcell + 1, ycell)] -= d * s3 * s;
-                vVel[V_INDEX(xcell, ycell)] += d * s2 * s;
-                vVel[V_INDEX(xcell, ycell + 1)] -= d * s4 * s;
+                if (s1) {
+                    uVel[U_INDEX(xcell, ycell)] += FIXED_MUL(d, s);
+                }
+                if (s3) {
+                    uVel[U_INDEX(xcell + 1, ycell)] -= FIXED_MUL(d, s);
+                }
+                if (s2) {
+                    vVel[V_INDEX(xcell, ycell)] += FIXED_MUL(d, s);
+                }
+                if (s4) {
+                    vVel[V_INDEX(xcell, ycell + 1)] -= FIXED_MUL(d, s);
+                }
 
 
 
@@ -480,12 +529,12 @@ void compute_grid_forces(unsigned int nIters) {
 
     //墙壁边界条件：边界速度为0
     for (int y = 0; y < CellNumY; y++) {
-        uVel[U_INDEX(0, y)] = 0.0f;
-        uVel[U_INDEX(CellNumX, y)] = 0.0f;
+        uVel[U_INDEX(0, y)] = 0;
+        uVel[U_INDEX(CellNumX, y)] = 0;
     }
     for (int x = 0; x < CellNumX; x++) {
-        vVel[V_INDEX(x, 0)] = 0.0f;
-        vVel[V_INDEX(x, CellNumY)] = 0.0f;
+        vVel[V_INDEX(x, 0)] = 0;
+        vVel[V_INDEX(x, CellNumY)] = 0;
     }
     return;
 }
@@ -500,17 +549,16 @@ void compute_grid_forces(unsigned int nIters) {
 
 void grid_to_particles() {
     for(int p=0; p<NumberOfParticles; p++){
-        float pic_vx = sample_u(particlePos[XID(p)], particlePos[YID(p)], uVel);
-        float pic_vy = sample_v(particlePos[XID(p)], particlePos[YID(p)], vVel);
-        float prev_vx = sample_u(particlePos[XID(p)], particlePos[YID(p)], uPrev);
-        float prev_vy = sample_v(particlePos[XID(p)], particlePos[YID(p)], vPrev);
+        fixed_t pic_vx = sample_u(particlePos[XID(p)], particlePos[YID(p)], uVel);
+        fixed_t pic_vy = sample_v(particlePos[XID(p)], particlePos[YID(p)], vVel);
+        fixed_t prev_vx = sample_u(particlePos[XID(p)], particlePos[YID(p)], uPrev);
+        fixed_t prev_vy = sample_v(particlePos[XID(p)], particlePos[YID(p)], vPrev);
 
-        float flip_vx = particleVel[XID(p)] + (pic_vx - prev_vx);
-        float flip_vy = particleVel[YID(p)] + (pic_vy - prev_vy);
-        const float flipBlend = 0.2f;
+        fixed_t flip_vx = particleVel[XID(p)] + (pic_vx - prev_vx);
+        fixed_t flip_vy = particleVel[YID(p)] + (pic_vy - prev_vy);
 
-        particleVel[XID(p)] = pic_vx * (1.0f - flipBlend) + flip_vx * flipBlend;
-        particleVel[YID(p)] = pic_vy * (1.0f - flipBlend) + flip_vy * flipBlend;
+        particleVel[XID(p)] = FIXED_MUL(pic_vx, FIXED_ONE - flipBlend) + FIXED_MUL(flip_vx, flipBlend);
+        particleVel[YID(p)] = FIXED_MUL(pic_vy, FIXED_ONE - flipBlend) + FIXED_MUL(flip_vy, flipBlend);
     }
 
     return;
@@ -526,8 +574,8 @@ void visualize_grid() {
     
     // 标记粒子位置
     for(int p=0; p<NumberOfParticles; p++){
-        int x = floor(particlePos[XID(p)]*invertSpacing);
-        int y = floor(particlePos[YID(p)]*invertSpacing);
+        int x = (int)(particlePos[XID(p)] / Spacing);
+        int y = (int)(particlePos[YID(p)] / Spacing);
 
         visual_buffer[y][x] = 'x';
     }
@@ -549,6 +597,25 @@ void visualize_grid() {
     
 }
 
+static void print_fixed_value(fixed_t value) {
+    if (value < 0) {
+        printf("-");
+        value = -value;
+    }
+    int32_t integer = value >> FIXED_SHIFT;
+    uint32_t frac = (uint32_t)(value & (FIXED_ONE - 1));
+    uint32_t frac_scaled = (frac * 100U) >> FIXED_SHIFT;
+    printf("%ld.%02u", (long)integer, frac_scaled);
+}
+
 void printLocation(unsigned int n){
-    printf("Particle %d location:%.2f,%.2f, speed is %.2f,%.2f \n",n,particlePos[XID(n)],particlePos[YID(n)],particleVel[XID(n)],particleVel[YID(n)]);
+    printf("Particle %d location:",n);
+    print_fixed_value(particlePos[XID(n)]);
+    printf(",");
+    print_fixed_value(particlePos[YID(n)]);
+    printf(", speed is ");
+    print_fixed_value(particleVel[XID(n)]);
+    printf(",");
+    print_fixed_value(particleVel[YID(n)]);
+    printf("\n");
 }
