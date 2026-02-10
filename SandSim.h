@@ -2,7 +2,45 @@
 #include <stdio.h>
 #include <string.h>
 
-// fixed-point configuration (Q16.16, 32-bit only)
+/*
+ * fixed-point configuration:
+ * - Prefer vendor IQmath library (IQ16)
+ * - Fallback to local Q16.16 implementation for host-side simulation/testing
+ */
+#if defined(__has_include)
+#  if __has_include("IQmath_RV32.h")
+#    define SANDSIM_USE_IQMATH 1
+#  endif
+#endif
+
+#ifdef SANDSIM_USE_IQMATH
+#include "IQmath_RV32.h"
+
+typedef int32_t fixed_t;
+#define FIXED_SHIFT 16
+#define FIXED_ONE ((fixed_t)1 << FIXED_SHIFT)
+
+#if defined(_IQ16)
+#define FIXED_FROM_INT(x) ((fixed_t)_IQ16((x)))
+#define FIXED_FROM_RATIO(num, den) ((fixed_t)_IQ16(((double)(num)) / ((double)(den))))
+#define FIXED_MUL(a, b) ((fixed_t)_IQ16mpy((a), (b)))
+#define FIXED_DIV(a, b) ((fixed_t)_IQ16div((a), (b)))
+#define FIXED_TO_INT(x) ((int)_IQ16int((x)))
+#elif defined(_IQ)
+#ifndef GLOBAL_Q
+#define GLOBAL_Q 16
+#endif
+#define FIXED_FROM_INT(x) ((fixed_t)_IQ((x)))
+#define FIXED_FROM_RATIO(num, den) ((fixed_t)_IQ(((double)(num)) / ((double)(den))))
+#define FIXED_MUL(a, b) ((fixed_t)_IQmpy((a), (b)))
+#define FIXED_DIV(a, b) ((fixed_t)_IQdiv((a), (b)))
+#define FIXED_TO_INT(x) ((int)_IQint((x)))
+#else
+#error "IQmath_RV32.h found, but unknown IQmath API. Please map FIXED_* macros in SandSim.h"
+#endif
+
+#else
+
 typedef int32_t fixed_t;
 #define FIXED_SHIFT 16
 #define FIXED_ONE ((fixed_t)1 << FIXED_SHIFT)
@@ -54,12 +92,12 @@ static inline fixed_t fixed_div(fixed_t numerator, fixed_t denominator) {
     return sign < 0 ? -result : result;
 }
 
-static inline fixed_t fixed_mul_int(fixed_t value, int32_t multiplier) {
-    return (fixed_t)(value * multiplier);
-}
-
 #define FIXED_MUL(a, b) fixed_mul((a), (b))
 #define FIXED_DIV(a, b) fixed_div((a), (b))
+#define FIXED_TO_INT(x) ((int)((x) >> FIXED_SHIFT))
+
+#endif
+
 #define FIXED_CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
 
 //模拟所用的参数

@@ -53,7 +53,7 @@ static fixed_t clamp_fixed(fixed_t value, fixed_t min_value, fixed_t max_value) 
 }
 
 static inline int fixed_to_int(fixed_t value) {
-    return (int)(value >> FIXED_SHIFT);
+    return FIXED_TO_INT(value);
 }
 
 #define U_INDEX(x,y) ((x) * CellNumY + (y))
@@ -259,10 +259,10 @@ void InitParticles(){
     invertSpacing = FIXED_DIV(FIXED_ONE, Spacing);
     halfSpacing = FIXED_MUL(Spacing, half);
     minPos = Spacing;
-    maxXPos = fixed_mul_int(Spacing, CellNumX - 1);
-    maxYPos = fixed_mul_int(Spacing, CellNumY - 1);
-    maxXBoundary = fixed_mul_int(Spacing, CellNumX) - ParticleRadius;
-    maxYBoundary = fixed_mul_int(Spacing, CellNumY) - ParticleRadius;
+    maxXPos = FIXED_MUL(Spacing, FIXED_FROM_INT(CellNumX - 1));
+    maxYPos = FIXED_MUL(Spacing, FIXED_FROM_INT(CellNumY - 1));
+    maxXBoundary = FIXED_MUL(Spacing, FIXED_FROM_INT(CellNumX)) - ParticleRadius;
+    maxYBoundary = FIXED_MUL(Spacing, FIXED_FROM_INT(CellNumY)) - ParticleRadius;
 
     for (int x = 0; x < CellNumX; x++) {
         for (int y = 0; y < CellNumY; y++) {
@@ -279,8 +279,8 @@ void InitParticles(){
         for(int j = 1; j < CellNumX; j++){
 
             int particleIndex = p_num;
-            particlePos[XID(particleIndex)] = fixed_mul_int(Spacing, j) + halfSpacing;
-            particlePos[YID(particleIndex)] = fixed_mul_int(Spacing, i) + halfSpacing;
+            particlePos[XID(particleIndex)] = FIXED_MUL(Spacing, FIXED_FROM_INT(j)) + halfSpacing;
+            particlePos[YID(particleIndex)] = FIXED_MUL(Spacing, FIXED_FROM_INT(i)) + halfSpacing;
             particleVel[XID(particleIndex)] = 0;
             particleVel[YID(particleIndex)] = 0;
             if(p_num++ >= NumberOfParticles){return;} 
@@ -487,8 +487,8 @@ do {
         int x1 = x0 + 1;
         int y1 = y0 + 1;
 
-        fixed_t tx = FIXED_MUL(x_shifted - fixed_mul_int(Spacing, x0), invertSpacing);
-        fixed_t ty = FIXED_MUL(y_shifted - fixed_mul_int(Spacing, y0), invertSpacing);
+        fixed_t tx = FIXED_MUL(x_shifted - FIXED_MUL(Spacing, FIXED_FROM_INT(x0)), invertSpacing);
+        fixed_t ty = FIXED_MUL(y_shifted - FIXED_MUL(Spacing, FIXED_FROM_INT(y0)), invertSpacing);
         tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
         ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
 
