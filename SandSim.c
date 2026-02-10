@@ -253,6 +253,156 @@ static fixed_t sample_v_filtered(fixed_t x, fixed_t y, const fixed_t *grid, fixe
     return FIXED_DIV(num, d);
 }
 
+static void sample_u_pair_filtered(fixed_t x, fixed_t y,
+    const fixed_t *grid_a, const fixed_t *grid_b,
+    fixed_t *sample_a, fixed_t *sample_b, fixed_t *weight_out) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing);
+    fixed_t fy = FIXED_MUL(y, invertSpacing) - half;
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
+    x0 = clamp_index(x0, 0, CellNumX - 2);
+    y0 = clamp_index(y0, 0, CellNumY - 2);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    fixed_t sx = FIXED_ONE - tx;
+    fixed_t sy = FIXED_ONE - ty;
+    fixed_t w00 = FIXED_MUL(sx, sy);
+    fixed_t w10 = FIXED_MUL(tx, sy);
+    fixed_t w01 = FIXED_MUL(sx, ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
+
+    int n = CellNumY;
+    int nr0 = x0 * n + y0;
+    int nr1 = x1 * n + y0;
+    int nr2 = x1 * n + y1;
+    int nr3 = x0 * n + y1;
+    int offset = n;
+
+    fixed_t valid0 = (gridType[nr0] != AIR_CELL || gridType[nr0 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid1 = (gridType[nr1] != AIR_CELL || gridType[nr1 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid2 = (gridType[nr2] != AIR_CELL || gridType[nr2 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid3 = (gridType[nr3] != AIR_CELL || gridType[nr3 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+
+    fixed_t d = FIXED_MUL(valid0, w00) + FIXED_MUL(valid1, w10) +
+        FIXED_MUL(valid2, w11) + FIXED_MUL(valid3, w01);
+    if (weight_out != NULL) {
+        *weight_out = d;
+    }
+    if (d == 0) {
+        *sample_a = 0;
+        *sample_b = 0;
+        return;
+    }
+
+    int i00 = U_INDEX(x0, y0);
+    int i10 = U_INDEX(x1, y0);
+    int i11 = U_INDEX(x1, y1);
+    int i01 = U_INDEX(x0, y1);
+    fixed_t inv_d = FIXED_DIV(FIXED_ONE, d);
+
+    fixed_t num_a = 0;
+    fixed_t num_b = 0;
+    if (valid0) {
+        num_a += FIXED_MUL(grid_a[i00], w00);
+        num_b += FIXED_MUL(grid_b[i00], w00);
+    }
+    if (valid1) {
+        num_a += FIXED_MUL(grid_a[i10], w10);
+        num_b += FIXED_MUL(grid_b[i10], w10);
+    }
+    if (valid2) {
+        num_a += FIXED_MUL(grid_a[i11], w11);
+        num_b += FIXED_MUL(grid_b[i11], w11);
+    }
+    if (valid3) {
+        num_a += FIXED_MUL(grid_a[i01], w01);
+        num_b += FIXED_MUL(grid_b[i01], w01);
+    }
+
+    *sample_a = FIXED_MUL(num_a, inv_d);
+    *sample_b = FIXED_MUL(num_b, inv_d);
+}
+
+static void sample_v_pair_filtered(fixed_t x, fixed_t y,
+    const fixed_t *grid_a, const fixed_t *grid_b,
+    fixed_t *sample_a, fixed_t *sample_b, fixed_t *weight_out) {
+    fixed_t fx = FIXED_MUL(x, invertSpacing) - half;
+    fixed_t fy = FIXED_MUL(y, invertSpacing);
+    int x0 = (int)(fx >> FIXED_SHIFT);
+    int y0 = (int)(fy >> FIXED_SHIFT);
+    x0 = clamp_index(x0, 0, CellNumX - 2);
+    y0 = clamp_index(y0, 0, CellNumY - 2);
+    fixed_t tx = fx - FIXED_FROM_INT(x0);
+    fixed_t ty = fy - FIXED_FROM_INT(y0);
+    tx = FIXED_CLAMP(tx, 0, FIXED_ONE);
+    ty = FIXED_CLAMP(ty, 0, FIXED_ONE);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    fixed_t sx = FIXED_ONE - tx;
+    fixed_t sy = FIXED_ONE - ty;
+    fixed_t w00 = FIXED_MUL(sx, sy);
+    fixed_t w10 = FIXED_MUL(tx, sy);
+    fixed_t w01 = FIXED_MUL(sx, ty);
+    fixed_t w11 = FIXED_MUL(tx, ty);
+
+    int n = CellNumY;
+    int nr0 = x0 * n + y0;
+    int nr1 = x1 * n + y0;
+    int nr2 = x1 * n + y1;
+    int nr3 = x0 * n + y1;
+    int offset = 1;
+
+    fixed_t valid0 = (gridType[nr0] != AIR_CELL || gridType[nr0 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid1 = (gridType[nr1] != AIR_CELL || gridType[nr1 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid2 = (gridType[nr2] != AIR_CELL || gridType[nr2 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+    fixed_t valid3 = (gridType[nr3] != AIR_CELL || gridType[nr3 - offset] != AIR_CELL) ? FIXED_ONE : 0;
+
+    fixed_t d = FIXED_MUL(valid0, w00) + FIXED_MUL(valid1, w10) +
+        FIXED_MUL(valid2, w11) + FIXED_MUL(valid3, w01);
+    if (weight_out != NULL) {
+        *weight_out = d;
+    }
+    if (d == 0) {
+        *sample_a = 0;
+        *sample_b = 0;
+        return;
+    }
+
+    int i00 = V_INDEX(x0, y0);
+    int i10 = V_INDEX(x1, y0);
+    int i11 = V_INDEX(x1, y1);
+    int i01 = V_INDEX(x0, y1);
+    fixed_t inv_d = FIXED_DIV(FIXED_ONE, d);
+
+    fixed_t num_a = 0;
+    fixed_t num_b = 0;
+    if (valid0) {
+        num_a += FIXED_MUL(grid_a[i00], w00);
+        num_b += FIXED_MUL(grid_b[i00], w00);
+    }
+    if (valid1) {
+        num_a += FIXED_MUL(grid_a[i10], w10);
+        num_b += FIXED_MUL(grid_b[i10], w10);
+    }
+    if (valid2) {
+        num_a += FIXED_MUL(grid_a[i11], w11);
+        num_b += FIXED_MUL(grid_b[i11], w11);
+    }
+    if (valid3) {
+        num_a += FIXED_MUL(grid_a[i01], w01);
+        num_b += FIXED_MUL(grid_b[i01], w01);
+    }
+
+    *sample_a = FIXED_MUL(num_a, inv_d);
+    *sample_b = FIXED_MUL(num_b, inv_d);
+}
+
 void InitParticles(){
     //在每个格子里生成一个。如果全填满了则不再生成。
     int p_num = 0;
@@ -557,24 +707,80 @@ void particles_to_grid() {
             gridType[gridIndex] = FLUID_CELL;//对应网格是液体网格
         }
 
-        accumulate_u(x, y, particleVel[XID(p)]);
-        accumulate_v(x, y, particleVel[YID(p)]);
+        fixed_t vx = particleVel[XID(p)];
+        fixed_t vy = particleVel[YID(p)];
+
+        fixed_t fx_u = FIXED_MUL(x, invertSpacing);
+        fixed_t fy_u = FIXED_MUL(y, invertSpacing) - half;
+        int ux0 = clamp_index((int)(fx_u >> FIXED_SHIFT), 0, CellNumX - 2);
+        int uy0 = clamp_index((int)(fy_u >> FIXED_SHIFT), 0, CellNumY - 2);
+        fixed_t utx = FIXED_CLAMP(fx_u - FIXED_FROM_INT(ux0), 0, FIXED_ONE);
+        fixed_t uty = FIXED_CLAMP(fy_u - FIXED_FROM_INT(uy0), 0, FIXED_ONE);
+        int ux1 = ux0 + 1;
+        int uy1 = uy0 + 1;
+        fixed_t usx = FIXED_ONE - utx;
+        fixed_t usy = FIXED_ONE - uty;
+        fixed_t uw00 = FIXED_MUL(usx, usy);
+        fixed_t uw10 = FIXED_MUL(utx, usy);
+        fixed_t uw01 = FIXED_MUL(usx, uty);
+        fixed_t uw11 = FIXED_MUL(utx, uty);
+
+        int ui00 = U_INDEX(ux0, uy0);
+        int ui10 = U_INDEX(ux1, uy0);
+        int ui01 = U_INDEX(ux0, uy1);
+        int ui11 = U_INDEX(ux1, uy1);
+        uVel[ui00] += FIXED_MUL(vx, uw00);
+        uWeights[ui00] += uw00;
+        uVel[ui10] += FIXED_MUL(vx, uw10);
+        uWeights[ui10] += uw10;
+        uVel[ui01] += FIXED_MUL(vx, uw01);
+        uWeights[ui01] += uw01;
+        uVel[ui11] += FIXED_MUL(vx, uw11);
+        uWeights[ui11] += uw11;
+
+        fixed_t fx_v = fx_u - half;
+        fixed_t fy_v = fy_u + half;
+        int vx0 = clamp_index((int)(fx_v >> FIXED_SHIFT), 0, CellNumX - 2);
+        int vy0 = clamp_index((int)(fy_v >> FIXED_SHIFT), 0, CellNumY - 2);
+        fixed_t vtx = FIXED_CLAMP(fx_v - FIXED_FROM_INT(vx0), 0, FIXED_ONE);
+        fixed_t vty = FIXED_CLAMP(fy_v - FIXED_FROM_INT(vy0), 0, FIXED_ONE);
+        int vx1 = vx0 + 1;
+        int vy1 = vy0 + 1;
+        fixed_t vsx = FIXED_ONE - vtx;
+        fixed_t vsy = FIXED_ONE - vty;
+        fixed_t vw00 = FIXED_MUL(vsx, vsy);
+        fixed_t vw10 = FIXED_MUL(vtx, vsy);
+        fixed_t vw01 = FIXED_MUL(vsx, vty);
+        fixed_t vw11 = FIXED_MUL(vtx, vty);
+
+        int vi00 = V_INDEX(vx0, vy0);
+        int vi10 = V_INDEX(vx1, vy0);
+        int vi01 = V_INDEX(vx0, vy1);
+        int vi11 = V_INDEX(vx1, vy1);
+        vVel[vi00] += FIXED_MUL(vy, vw00);
+        vWeights[vi00] += vw00;
+        vVel[vi10] += FIXED_MUL(vy, vw10);
+        vWeights[vi10] += vw10;
+        vVel[vi01] += FIXED_MUL(vy, vw01);
+        vWeights[vi01] += vw01;
+        vVel[vi11] += FIXED_MUL(vy, vw11);
+        vWeights[vi11] += vw11;
 
     }
     //传递完了之后应该除掉总权重。
-    for (int i=0;i<CellNumX + 1;i++){
-       for (int j=0;j<CellNumY;j++){
-        if(uWeights[U_INDEX(i,j)]){ //显然如果这里是空气那就不用算了，不应该处以0
-            uVel[U_INDEX(i,j)] = FIXED_DIV(uVel[U_INDEX(i,j)], uWeights[U_INDEX(i,j)]);
-         }
-       }
-    }
-    for (int i=0;i<CellNumX;i++){
-       for (int j=0;j<CellNumY + 1;j++){
-        if(vWeights[V_INDEX(i,j)]){ //显然如果这里是空气那就不用算了，不应该处以0
-            vVel[V_INDEX(i,j)] = FIXED_DIV(vVel[V_INDEX(i,j)], vWeights[V_INDEX(i,j)]);
+    int uCount = (CellNumX + 1) * CellNumY;
+    for (int i = 0; i < uCount; i++) {
+        fixed_t w = uWeights[i];
+        if (w) {
+            uVel[i] = FIXED_DIV(uVel[i], w);
         }
-       }
+    }
+    int vCount = CellNumX * (CellNumY + 1);
+    for (int i = 0; i < vCount; i++) {
+        fixed_t w = vWeights[i];
+        if (w) {
+            vVel[i] = FIXED_DIV(vVel[i], w);
+        }
     }
     for (int y = 0; y < CellNumY; y++) {
         uVel[U_INDEX(0, y)] = 0;
@@ -679,17 +885,19 @@ void grid_to_particles() {
         fixed_t y = clamp_fixed(particlePos[YID(p)], minPos, maxYPos);
 
         fixed_t weight = 0;
-        fixed_t pic_vx = sample_u_filtered(x, y, uVel, &weight);
+        fixed_t pic_vx = 0;
+        fixed_t prev_vx = 0;
+        sample_u_pair_filtered(x, y, uVel, uPrev, &pic_vx, &prev_vx, &weight);
         if (weight > 0) {
-            fixed_t prev_vx = sample_u_filtered(x, y, uPrev, NULL);
             fixed_t flip_vx = particleVel[XID(p)] + (pic_vx - prev_vx);
             particleVel[XID(p)] = FIXED_MUL(pic_vx, FIXED_ONE - flipBlend) + FIXED_MUL(flip_vx, flipBlend);
         }
 
         weight = 0;
-        fixed_t pic_vy = sample_v_filtered(x, y, vVel, &weight);
+        fixed_t pic_vy = 0;
+        fixed_t prev_vy = 0;
+        sample_v_pair_filtered(x, y, vVel, vPrev, &pic_vy, &prev_vy, &weight);
         if (weight > 0) {
-            fixed_t prev_vy = sample_v_filtered(x, y, vPrev, NULL);
             fixed_t flip_vy = particleVel[YID(p)] + (pic_vy - prev_vy);
             particleVel[YID(p)] = FIXED_MUL(pic_vy, FIXED_ONE - flipBlend) + FIXED_MUL(flip_vy, flipBlend);
         }
